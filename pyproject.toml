@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "orca-py"
+version = "0.0.1"
+description = "ORCA-py is an unofficial library for the ORCA Series motor from Iris Dynamics"
+authors = ["Yifei Liu <34564223+EzekielDaun@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+pymodbus = "^3.8.2"
+pyserial = "^3.5"
+scipy = "^1.14.1"
+
+[tool.poetry.dev-dependencies]
+numpy = "^2.2.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
