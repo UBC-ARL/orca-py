@@ -15,10 +15,21 @@ A7_SERIAL_ADDRESS = "/dev/tty.usbserial-FT8F0SER"
 A8_SERIAL_ADDRESS = "/dev/tty.usbserial-FT8EQ4MF"
 A9_SERIAL_ADDRESS = "/dev/tty.usbserial-FT878A04"
 
+#################################################
+# Connections:
+# PC --> USB Hub --> 9*USB-RS422 Cables --> 9*Splitters --> 9*Orca Actuators
+#################################################
+
+# 0mm-->50mm-->0mm
+TRAJECTORY_SINGLE = [
+    int(x) for x in 25 * 1000 * (1 - np.cos(np.linspace(0, 2 * np.pi, 512)))
+]
+
+# copy for all 9 actuators
+TRAJECTORIES = np.array([TRAJECTORY_SINGLE for _ in range(9)]).T
+
 
 async def async_main():
-    foo = [int(x) for x in 25 * 1000 * (1 - np.cos(np.linspace(0, 2 * np.pi, 512)))]
-    trajectories = np.array([foo for _ in range(9)]).T
 
     actuators = await asyncio.gather(
         Actuator.create(A1_SERIAL_ADDRESS),
@@ -50,7 +61,7 @@ async def async_main():
 
     # ASSIGN A HOME POSITION (SLOT 0)
     for index, a in enumerate(actuators):
-        await a.configure_motion(0, int(trajectories[index][0]), 5000, delay, 1, 0, 0)
+        await a.configure_motion(0, int(TRAJECTORIES[index][0]), 5000, delay, 1, 0, 0)
 
     print("Set Kinematic Mode")
 
@@ -63,7 +74,7 @@ async def async_main():
 
     # CONFIGURE & TRIGGER THE STARTING LOCATION SLOWLY
     for index, a in enumerate(actuators):
-        await a.configure_motion(1, int(trajectories[index][0]), 5000, delay, 2, 0, 0)
+        await a.configure_motion(1, int(TRAJECTORIES[index][0]), 5000, delay, 2, 0, 0)
     for a in actuators:
         await a.kinematic_trigger(1)
 
@@ -71,13 +82,13 @@ async def async_main():
     current_motion_id = 1
     current_step = 0
 
-    while current_step < trajectories.shape[1] - 1:
+    while current_step < TRAJECTORIES.shape[1] - 1:
         current_step += 1
         next_motion_id = current_motion_id % 2 + 1
         for index, a in enumerate(actuators):
             await a.configure_motion(
                 next_motion_id,
-                int(trajectories[index][current_step]),
+                int(TRAJECTORIES[index][current_step]),
                 time_step,
                 delay,
                 current_motion_id,
