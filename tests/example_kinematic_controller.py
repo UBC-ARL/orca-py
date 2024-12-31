@@ -30,7 +30,6 @@ TRAJECTORIES = np.array([TRAJECTORY_SINGLE for _ in range(9)]).T
 
 
 async def async_main():
-
     actuators = await asyncio.gather(
         Actuator.create(A1_SERIAL_ADDRESS),
         Actuator.create(A2_SERIAL_ADDRESS),
@@ -52,18 +51,21 @@ async def async_main():
     ki = 300
     kdv = 000
     kde = 500
-    time_step = 300
+    time_step = 25
     delay = 0
 
     # TUNE PID
-    for a in actuators:
-        await a.tune_pid_controller(300000, kp, ki, kdv, kde)
+    await asyncio.gather(
+        *[a.tune_pid_controller(300000, kp, ki, kdv, kde) for a in actuators]
+    )
 
     # ASSIGN A HOME POSITION (SLOT 0)
-    for index, a in enumerate(actuators):
-        await a.configure_motion(0, int(TRAJECTORIES[index][0]), 5000, delay, 1, 0, 0)
-
-    print("Set Kinematic Mode")
+    await asyncio.gather(
+        *[
+            a.configure_motion(0, int(TRAJECTORIES[0][index]), 5000, 0, 1, 0, 0)
+            for index, a in enumerate(actuators)
+        ]
+    )
 
     # TRIGGER KINEMATIC MODE. MOTORS WILL GO TO HOME POSITION. MAKE SURE HOME POSITION IS SET PROPERLY!!
     for a in actuators:
@@ -73,31 +75,44 @@ async def async_main():
     print("Trigger start location")
 
     # CONFIGURE & TRIGGER THE STARTING LOCATION SLOWLY
-    for index, a in enumerate(actuators):
-        await a.configure_motion(1, int(TRAJECTORIES[index][0]), 5000, delay, 2, 0, 0)
-    for a in actuators:
-        await a.kinematic_trigger(1)
+    await asyncio.gather(
+        *[
+            a.configure_motion(1, int(TRAJECTORIES[0][index]), 5000, 0, 2, 0, 0)
+            for index, a in enumerate(actuators)
+        ]
+    )
+    await asyncio.gather(*[a.kinematic_trigger(1) for a in actuators])
 
-    # START WITH MOTION 1
-    current_motion_id = 1
-    current_step = 0
-
-    while current_step < TRAJECTORIES.shape[1] - 1:
-        current_step += 1
-        next_motion_id = current_motion_id % 2 + 1
+    print("Trajectory start")
+    # start trajectory
+    MAX_SLOT = 32
+    for trajectory_index, rho in enumerate(TRAJECTORIES):
+        slot_index = trajectory_index % MAX_SLOT
+        for a in actuators:  # make sure no overlapping
+            while True:
+                kinematic_status = (await a.kinematic_status()).registers[0]
+                running_flag = bool(kinematic_status & 0b1000000000000000)
+                current_kin_id = int(kinematic_status & 0b0111111111111111)
+                if (not running_flag) or slot_index != current_kin_id:
+                    break
         for index, a in enumerate(actuators):
-            await a.configure_motion(
-                next_motion_id,
-                int(TRAJECTORIES[index][current_step]),
-                time_step,
-                delay,
-                current_motion_id,
-                0,
-                0,
-            )
-        for a in actuators:
-            await a.kinematic_trigger(next_motion_id)
-        current_motion_id = next_motion_id
+            try:
+                await a.configure_motion(
+                    slot_index,
+                    int(rho[index]),
+                    time_step,
+                    delay,
+                    (slot_index + 1) % MAX_SLOT,
+                    0,
+                    0,
+                )
+            except Exception as e:
+                print(
+                    f"Error configuring motion at slot {slot_index} for actuator {index + 1}: {e}"
+                )
+        await asyncio.gather(*[a.kinematic_trigger(slot_index) for a in actuators])
+        print(f"Step {trajectory_index+1} at slot {slot_index} triggered")
+
     print("Done!")
 
 
