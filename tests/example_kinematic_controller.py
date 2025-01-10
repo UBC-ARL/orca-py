@@ -28,18 +28,21 @@ TRAJECTORY_SINGLE = [
 # copy for all 9 actuators
 TRAJECTORIES = np.array([TRAJECTORY_SINGLE for _ in range(9)]).T
 
+# baud rate
+BAUDRATE = 115200
+
 
 async def async_main():
     actuators = await asyncio.gather(
-        Actuator.create(A1_SERIAL_ADDRESS),
-        Actuator.create(A2_SERIAL_ADDRESS),
-        Actuator.create(A3_SERIAL_ADDRESS),
-        Actuator.create(A4_SERIAL_ADDRESS),
-        Actuator.create(A5_SERIAL_ADDRESS),
-        Actuator.create(A6_SERIAL_ADDRESS),
-        Actuator.create(A7_SERIAL_ADDRESS),
-        Actuator.create(A8_SERIAL_ADDRESS),
-        Actuator.create(A9_SERIAL_ADDRESS),
+        Actuator.create(A1_SERIAL_ADDRESS, BAUDRATE),
+        Actuator.create(A2_SERIAL_ADDRESS, BAUDRATE),
+        Actuator.create(A3_SERIAL_ADDRESS, BAUDRATE),
+        Actuator.create(A4_SERIAL_ADDRESS, BAUDRATE),
+        Actuator.create(A5_SERIAL_ADDRESS, BAUDRATE),
+        Actuator.create(A6_SERIAL_ADDRESS, BAUDRATE),
+        Actuator.create(A7_SERIAL_ADDRESS, BAUDRATE),
+        Actuator.create(A8_SERIAL_ADDRESS, BAUDRATE),
+        Actuator.create(A9_SERIAL_ADDRESS, BAUDRATE),
     )
 
     # set all actuators to sleep mode

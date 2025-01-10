@@ -22,18 +22,18 @@ class Actuator:
 
     # use a class method to initialize the class while await for async connection
     @classmethod
-    async def create(cls, comport: str):
+    async def create(cls, comport: str, baudrate: int):
         """
         Asynchronous factory method to initialize the class with an asynchronous operation.
         """
-        actuator = cls(comport)
+        actuator = cls(comport, baudrate)
         await actuator.__client.connect()
         return actuator
 
     # do not directly instantiate this class
-    def __init__(self, comport: str):
+    def __init__(self, comport: str, baudrate: int):
         self.__client = AsyncModbusSerialClient(
-            comport, parity="E", baudrate=921600, timeout=0.1, retries=3
+            comport, parity="E", baudrate=baudrate, timeout=0.1, retries=3
         )
 
     ################################
