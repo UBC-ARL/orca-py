@@ -119,3 +119,9 @@ class Actuator:
     # Check Kinematic Status
     async def kinematic_status(self):
         return await self.read_registers(ORCA_REGISTER.KINEMATIC_STATUS)
+
+    # Position Command
+    async def position_command(self, position: int):
+        return await self.write_multi_registers(
+            ORCA_REGISTER.POSITION_CMD, list(_int32_to_uint16s(position))
+        )
