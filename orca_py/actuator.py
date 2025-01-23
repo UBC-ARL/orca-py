@@ -1,8 +1,17 @@
 import struct
+from typing import Optional
 
 from pymodbus.client.serial import AsyncModbusSerialClient
 
-from .orca_constant import ORCA_MODE
+from .orca_constant import ORCA_MODE, ORCA_MODE_SUBCODE
+from .orca_high_speed_stream_pdu import (
+    OrcaStreamCommandRequestPDU,
+    OrcaStreamCommandResponsePDU,
+    OrcaStreamManageRequestPDU,
+    OrcaStreamManageResponsePDU,
+    OrcaStreamReadRequestPDU,
+    OrcaStreamReadResponsePDU,
+)
 from .orca_register import ORCA_REGISTER
 
 
@@ -35,6 +44,10 @@ class Actuator:
         self.__client = AsyncModbusSerialClient(
             comport, parity="E", baudrate=baudrate, timeout=0.1, retries=3
         )
+
+    @property
+    def client(self):
+        return self.__client
 
     ################################
     # Base ModBus Communication Functions
@@ -69,8 +82,6 @@ class Actuator:
         return await self.__client.read_holding_registers(
             registers_start_address, count=num_registers
         )
-
-    # TODO: read/write motor streams
 
     ################################
     # Orca Functions
@@ -125,3 +136,70 @@ class Actuator:
         return await self.write_multi_registers(
             ORCA_REGISTER.POSITION_CMD, list(_int32_to_uint16s(position))
         )
+
+
+class StreamedActuator:
+
+    # use a class method to initialize the class while await for async connection
+    @classmethod
+    async def create(cls, comport: str, baudrate: int, dev_id: int = 1):
+        """
+        Asynchronous factory method to initialize the class with an asynchronous operation.
+        """
+        actuator = cls(comport, baudrate, dev_id)
+        await actuator.__client.connect()
+        return actuator
+
+    # do not directly instantiate this class
+    def __init__(self, comport: str, baudrate: int, dev_id: int):
+        self.__client = AsyncModbusSerialClient(
+            comport, parity="E", baudrate=baudrate, timeout=0.1, retries=3
+        )
+        self.__client.register(OrcaStreamManageResponsePDU)
+        self.__client.register(OrcaStreamCommandResponsePDU)
+        self.__client.register(OrcaStreamReadResponsePDU)
+        self.__dev_id = dev_id
+
+    async def enable_stream(self, enable: bool, baudrate: int, delay: int):
+        response: OrcaStreamManageResponsePDU = await self.__client.execute(
+            False, OrcaStreamManageRequestPDU(enable, baudrate, delay, dev_id=1)
+        )  # type: ignore
+        return response.baudrate, response.delay
+
+    async def stream_read_debug_test(self):
+        response: OrcaStreamReadResponsePDU = await self.__client.execute(
+            False, OrcaStreamReadRequestPDU(ORCA_REGISTER.MODE_OF_OPERATION, ORCA_MODE.SleepMode, dev_id=self.__dev_id)  # type: ignore
+        )
+        return (
+            response.register_value,
+            response.mode_of_operation,
+            response.stream_info,
+        )
+
+    async def stream_command_debug_test(self):
+        response: OrcaStreamCommandResponsePDU = await self.__client.execute(
+            False, OrcaStreamCommandRequestPDU(ORCA_MODE_SUBCODE.PositionControlStream, int(5e3), dev_id=self.__dev_id)  # type: ignore
+        )
+        return response.stream_info
+
+    async def stream_command(self, subcode: ORCA_MODE_SUBCODE, data: Optional[int]):
+        match subcode:
+            case ORCA_MODE_SUBCODE.ForceControlStream:
+                if data is None:
+                    raise ValueError("ForceControlStream requires data.")
+            case ORCA_MODE_SUBCODE.PositionControlStream:
+                if data is None:
+                    raise ValueError("PositionControlStream requires data.")
+            case ORCA_MODE_SUBCODE.KinematicDataStream:
+                pass
+            case ORCA_MODE_SUBCODE.HapticDataStream:
+                if data is None:
+                    raise ValueError("HapticDataStream requires data.")
+            case ORCA_MODE_SUBCODE.SleepDataStream:
+                pass
+            case _:
+                raise ValueError("Invalid subcode.")
+        response: OrcaStreamCommandResponsePDU = await self.__client.execute(
+            False, OrcaStreamCommandRequestPDU(subcode, data, dev_id=self.__dev_id)  # type: ignore
+        )
+        return response.stream_info
