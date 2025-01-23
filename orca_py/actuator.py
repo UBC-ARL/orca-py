@@ -1,5 +1,5 @@
 import struct
-from typing import Optional
+from typing import Literal, Optional
 
 from pymodbus.client.serial import AsyncModbusSerialClient
 
@@ -11,6 +11,8 @@ from .orca_high_speed_stream_pdu import (
     OrcaStreamManageResponsePDU,
     OrcaStreamReadRequestPDU,
     OrcaStreamReadResponsePDU,
+    OrcaStreamWriteRequestPDU,
+    OrcaStreamWriteResponsePDU,
 )
 from .orca_register import ORCA_REGISTER
 
@@ -89,16 +91,20 @@ class Actuator:
 
     # Change Orca's mode of operation
     async def set_mode(self, mode: ORCA_MODE):
-        return await self.write_register(ORCA_REGISTER.CTRL_REG_3, mode)
+        return await self.write_register(ORCA_REGISTER.CTRL_REG_3.value.address, mode)
 
     async def get_mode(self):
         return ORCA_MODE(
-            (await self.read_registers(ORCA_REGISTER.MODE_OF_OPERATION)).registers[0]
+            (
+                await self.read_registers(ORCA_REGISTER.MODE_OF_OPERATION.value.address)
+            ).registers[0]
         )
 
     # Trigger Kinematic Motion
     async def kinematic_trigger(self, motion_id: int):
-        return await self.write_register(ORCA_REGISTER.KIN_SW_TRIGGER, motion_id)
+        return await self.write_register(
+            ORCA_REGISTER.KIN_SW_TRIGGER.value.address, motion_id
+        )
 
     # Configure Kinematic Motion
     async def configure_motion(
@@ -115,7 +121,7 @@ class Actuator:
         next_type_auto = (nextID << 3) + (type << 1) + autonext
         configuration = [positionL, positionH, timeL, timeH, delay, next_type_auto]
         return await self.write_multi_registers(
-            ORCA_REGISTER.KIN_MOTION_0 + motionID * 6, configuration
+            ORCA_REGISTER.KIN_MOTION_0.value.address + motionID * 6, configuration
         )
 
     # Tune PID Values
@@ -125,16 +131,18 @@ class Actuator:
         # obj.write_multi_registers(133, 6, configuration);  % PC_PGAIN 133, num consecutive registers 6, register values  configuration
         saturationL, saturationH = _int32_to_uint16s(saturation)
         configuration = [p_gain, i_gain, dv_gain, de_gain, saturationL, saturationH]
-        return await self.write_multi_registers(ORCA_REGISTER.PC_PGAIN, configuration)
+        return await self.write_multi_registers(
+            ORCA_REGISTER.PC_PGAIN.value.address, configuration
+        )
 
     # Check Kinematic Status
     async def kinematic_status(self):
-        return await self.read_registers(ORCA_REGISTER.KINEMATIC_STATUS)
+        return await self.read_registers(ORCA_REGISTER.KINEMATIC_STATUS.value.address)
 
     # Position Command
     async def position_command(self, position: int):
         return await self.write_multi_registers(
-            ORCA_REGISTER.POSITION_CMD, list(_int32_to_uint16s(position))
+            ORCA_REGISTER.POSITION_CMD.value.address, list(_int32_to_uint16s(position))
         )
 
 
@@ -160,15 +168,21 @@ class StreamedActuator:
         self.__client.register(OrcaStreamReadResponsePDU)
         self.__dev_id = dev_id
 
-    async def enable_stream(self, enable: bool, baudrate: int, delay: int):
+    async def __set_stream_enable(self, enable: bool, baudrate: int, delay: int):
         response: OrcaStreamManageResponsePDU = await self.__client.execute(
             False, OrcaStreamManageRequestPDU(enable, baudrate, delay, dev_id=1)
         )  # type: ignore
         return response.baudrate, response.delay
 
-    async def stream_read_debug_test(self):
+    async def enable_stream(self, baudrate: int, delay: int):
+        return await self.__set_stream_enable(True, baudrate, delay)
+
+    async def disable_stream(self):
+        return await self.__set_stream_enable(False, 0, 0)
+
+    async def __stream_read_debug_test(self):
         response: OrcaStreamReadResponsePDU = await self.__client.execute(
-            False, OrcaStreamReadRequestPDU(ORCA_REGISTER.MODE_OF_OPERATION, ORCA_MODE.SleepMode, dev_id=self.__dev_id)  # type: ignore
+            False, OrcaStreamReadRequestPDU(ORCA_REGISTER.MODE_OF_OPERATION, 1, dev_id=self.__dev_id)  # type: ignore
         )
         return (
             response.register_value,
@@ -176,13 +190,13 @@ class StreamedActuator:
             response.stream_info,
         )
 
-    async def stream_command_debug_test(self):
+    async def __stream_command_debug_test(self):
         response: OrcaStreamCommandResponsePDU = await self.__client.execute(
             False, OrcaStreamCommandRequestPDU(ORCA_MODE_SUBCODE.PositionControlStream, int(5e3), dev_id=self.__dev_id)  # type: ignore
         )
         return response.stream_info
 
-    async def stream_command(self, subcode: ORCA_MODE_SUBCODE, data: Optional[int]):
+    async def motor_command(self, subcode: ORCA_MODE_SUBCODE, data: Optional[int]):
         match subcode:
             case ORCA_MODE_SUBCODE.ForceControlStream:
                 if data is None:
@@ -201,5 +215,19 @@ class StreamedActuator:
                 raise ValueError("Invalid subcode.")
         response: OrcaStreamCommandResponsePDU = await self.__client.execute(
             False, OrcaStreamCommandRequestPDU(subcode, data, dev_id=self.__dev_id)  # type: ignore
+        )
+        return response.stream_info
+
+    async def motor_read(self, address: ORCA_REGISTER, width: Literal[1] | Literal[2]):
+        response: OrcaStreamReadResponsePDU = await self.__client.execute(
+            False, OrcaStreamReadRequestPDU(address, width, dev_id=self.__dev_id)  # type: ignore
+        )
+        return response.register_value, response.mode_of_operation, response.stream_info
+
+    async def motor_write(
+        self, address: ORCA_REGISTER, width: Literal[1] | Literal[2], data: int
+    ):
+        response: OrcaStreamWriteResponsePDU = await self.__client.execute(
+            False, OrcaStreamWriteRequestPDU(address, width, data, dev_id=self.__dev_id)  # type: ignore
         )
         return response.stream_info

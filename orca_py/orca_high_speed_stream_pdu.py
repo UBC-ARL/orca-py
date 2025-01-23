@@ -1,5 +1,6 @@
 import struct
 from dataclasses import dataclass
+from typing import Literal
 
 from pymodbus.pdu import ModbusPDU
 
@@ -149,7 +150,13 @@ class OrcaStreamReadRequestPDU(ModbusPDU):
     function_code = 0x68
     rtu_frame_size = 7  # 1 addr + 1 func + 2 register address + 1 width + 2 crc
 
-    def __init__(self, register_address: int, register_width: int, *args, **kwargs):
+    def __init__(
+        self,
+        register_address: int,
+        register_width: Literal[1] | Literal[2],
+        *args,
+        **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.__register_address = register_address  # 2 bytes
         self.__register_width = register_width  # 1 bytes
@@ -204,7 +211,12 @@ class OrcaStreamWriteRequestPDU(ModbusPDU):
     )
 
     def __init__(
-        self, register_address: int, register_width: int, data: int, *args, **kwargs
+        self,
+        register_address: int,
+        register_width: Literal[1] | Literal[2],
+        data: int,
+        *args,
+        **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.__register_address = register_address  # 2 bytes
