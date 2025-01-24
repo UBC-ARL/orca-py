@@ -166,6 +166,7 @@ class StreamedActuator:
         self.__client.register(OrcaStreamManageResponsePDU)
         self.__client.register(OrcaStreamCommandResponsePDU)
         self.__client.register(OrcaStreamReadResponsePDU)
+        self.__client.register(OrcaStreamWriteResponsePDU)
         self.__dev_id = dev_id
 
     async def __set_stream_enable(self, enable: bool, baudrate: int, delay: int):
@@ -179,22 +180,6 @@ class StreamedActuator:
 
     async def disable_stream(self):
         return await self.__set_stream_enable(False, 0, 0)
-
-    async def __stream_read_debug_test(self):
-        response: OrcaStreamReadResponsePDU = await self.__client.execute(
-            False, OrcaStreamReadRequestPDU(ORCA_REGISTER.MODE_OF_OPERATION, 1, dev_id=self.__dev_id)  # type: ignore
-        )
-        return (
-            response.register_value,
-            response.mode_of_operation,
-            response.stream_info,
-        )
-
-    async def __stream_command_debug_test(self):
-        response: OrcaStreamCommandResponsePDU = await self.__client.execute(
-            False, OrcaStreamCommandRequestPDU(ORCA_MODE_SUBCODE.PositionControlStream, int(5e3), dev_id=self.__dev_id)  # type: ignore
-        )
-        return response.stream_info
 
     async def motor_command(self, subcode: ORCA_MODE_SUBCODE, data: Optional[int]):
         match subcode:
@@ -216,18 +201,53 @@ class StreamedActuator:
         response: OrcaStreamCommandResponsePDU = await self.__client.execute(
             False, OrcaStreamCommandRequestPDU(subcode, data, dev_id=self.__dev_id)  # type: ignore
         )
+        if not response.stream_info.error:
+            raise RuntimeError(f"Motor Error: {response.stream_info.error}")
         return response.stream_info
 
-    async def motor_read(self, address: ORCA_REGISTER, width: Literal[1] | Literal[2]):
+    async def motor_read(self, address: int, width: Literal[1] | Literal[2]):
         response: OrcaStreamReadResponsePDU = await self.__client.execute(
             False, OrcaStreamReadRequestPDU(address, width, dev_id=self.__dev_id)  # type: ignore
         )
+        if not response.stream_info.error:
+            raise RuntimeError(f"Motor Error: {response.stream_info.error}")
         return response.register_value, response.mode_of_operation, response.stream_info
 
     async def motor_write(
-        self, address: ORCA_REGISTER, width: Literal[1] | Literal[2], data: int
+        self, address: int, width: Literal[1] | Literal[2], data: int
     ):
         response: OrcaStreamWriteResponsePDU = await self.__client.execute(
             False, OrcaStreamWriteRequestPDU(address, width, data, dev_id=self.__dev_id)  # type: ignore
         )
+        if not response.stream_info.error:
+            raise RuntimeError(f"Motor Error: {response.stream_info.error}")
         return response.stream_info
+
+    async def tune_pid_controller(self, p: int, i: int, dv: int, de: int, sat: int):
+        sat_lo, sat_hi = _int32_to_uint16s(sat)
+        await self.motor_write(
+            ORCA_REGISTER.PC_PGAIN.value.address, ORCA_REGISTER.PC_PGAIN.value.width, p
+        )
+        await self.motor_write(
+            ORCA_REGISTER.PC_IGAIN.value.address, ORCA_REGISTER.PC_IGAIN.value.width, i
+        )
+        await self.motor_write(
+            ORCA_REGISTER.PC_DVGAIN.value.address,
+            ORCA_REGISTER.PC_DVGAIN.value.width,
+            dv,
+        )
+        await self.motor_write(
+            ORCA_REGISTER.PC_DEGAIN.value.address,
+            ORCA_REGISTER.PC_DEGAIN.value.width,
+            de,
+        )
+        await self.motor_write(
+            ORCA_REGISTER.PC_FSATU.value.address,
+            ORCA_REGISTER.PC_FSATU.value.width,
+            sat_lo,
+        )
+        return await self.motor_write(
+            ORCA_REGISTER.PC_FSATU_H.value.address,
+            ORCA_REGISTER.PC_FSATU_H.value.width,
+            sat_hi,
+        )

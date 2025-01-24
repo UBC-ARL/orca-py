@@ -4,7 +4,7 @@ from typing import Literal
 
 from pymodbus.pdu import ModbusPDU
 
-from .orca_constant import ORCA_MODE, ORCA_MODE_SUBCODE
+from .orca_constant import ORCA_ERROR, ORCA_MODE, ORCA_MODE_SUBCODE
 
 
 # ========== Start of Management PDU ==========
@@ -55,7 +55,11 @@ class OrcaStreamInfo:
     power: int
     temperature: int
     voltage: int
-    error: int
+    error: list[ORCA_ERROR]
+
+    @staticmethod
+    def parse_errors(error: int):
+        return [ORCA_ERROR(error & (1 << i)) for i in range(16) if error & (1 << i)]
 
 
 # ========== Start of Command PDU ==========
@@ -85,7 +89,7 @@ class OrcaStreamCommandResponsePDU(ModbusPDU):
             power=self.__power_value,
             temperature=self.__temperature_value,
             voltage=self.__voltage_value,
-            error=self.__errors,
+            error=OrcaStreamInfo.parse_errors(self.__errors),
         )
 
 
@@ -142,7 +146,7 @@ class OrcaStreamReadResponsePDU(ModbusPDU):
             power=self.__power_value,
             temperature=self.__temperature_value,
             voltage=self.__voltage_value,
-            error=self.__errors,
+            error=OrcaStreamInfo.parse_errors(self.__errors),
         )
 
 
@@ -200,7 +204,7 @@ class OrcaStreamWriteResponsePDU(ModbusPDU):
             power=self.__power_value,
             temperature=self.__temperature_value,
             voltage=self.__voltage_value,
-            error=self.__errors,
+            error=OrcaStreamInfo.parse_errors(self.__errors),
         )
 
 
