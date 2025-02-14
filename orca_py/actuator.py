@@ -1,6 +1,7 @@
 import struct
 from typing import Literal, Optional
 
+from pymodbus import ExceptionResponse
 from pymodbus.client.serial import AsyncModbusSerialClient
 
 from .orca_constant import ORCA_MODE, ORCA_MODE_SUBCODE
@@ -150,18 +151,22 @@ class StreamedActuator:
 
     # use a class method to initialize the class while await for async connection
     @classmethod
-    async def create(cls, comport: str, baudrate: int, dev_id: int = 1):
+    async def create(
+        cls, comport: str, baudrate: int, timeout: float, retries: int, dev_id: int = 1
+    ):
         """
         Asynchronous factory method to initialize the class with an asynchronous operation.
         """
-        actuator = cls(comport, baudrate, dev_id)
+        actuator = cls(comport, baudrate, timeout, retries, dev_id)
         await actuator.__client.connect()
         return actuator
 
     # do not directly instantiate this class
-    def __init__(self, comport: str, baudrate: int, dev_id: int):
+    def __init__(
+        self, comport: str, baudrate: int, timeout: float, retries: int, dev_id: int
+    ):
         self.__client = AsyncModbusSerialClient(
-            comport, parity="E", baudrate=baudrate, timeout=0.1, retries=3
+            comport, parity="E", baudrate=baudrate, timeout=timeout, retries=retries
         )
         self.__client.register(OrcaStreamManageResponsePDU)
         self.__client.register(OrcaStreamCommandResponsePDU)
@@ -176,6 +181,9 @@ class StreamedActuator:
         return response.baudrate, response.delay
 
     async def enable_stream(self, baudrate: int, delay: int):
+        await self.__client.write_register(
+            ORCA_REGISTER.CTRL_REG_3.value.address, ORCA_MODE.SleepMode
+        )
         return await self.__set_stream_enable(True, baudrate, delay)
 
     async def disable_stream(self):
@@ -190,18 +198,20 @@ class StreamedActuator:
                 if data is None:
                     raise ValueError("PositionControlStream requires data.")
             case ORCA_MODE_SUBCODE.KinematicDataStream:
-                pass
+                data = 0x00
             case ORCA_MODE_SUBCODE.HapticDataStream:
                 if data is None:
                     raise ValueError("HapticDataStream requires data.")
             case ORCA_MODE_SUBCODE.SleepDataStream:
-                pass
+                data = 0x00
             case _:
                 raise ValueError("Invalid subcode.")
         response: OrcaStreamCommandResponsePDU = await self.__client.execute(
             False, OrcaStreamCommandRequestPDU(subcode, data, dev_id=self.__dev_id)  # type: ignore
         )
-        if not response.stream_info.error:
+        if type(response) is ExceptionResponse:
+            raise RuntimeError(f"Motor Error: Exception Response: {response}")
+        elif response.stream_info.error:
             raise RuntimeError(f"Motor Error: {response.stream_info.error}")
         return response.stream_info
 
@@ -209,7 +219,7 @@ class StreamedActuator:
         response: OrcaStreamReadResponsePDU = await self.__client.execute(
             False, OrcaStreamReadRequestPDU(address, width, dev_id=self.__dev_id)  # type: ignore
         )
-        if not response.stream_info.error:
+        if response.stream_info.error:
             raise RuntimeError(f"Motor Error: {response.stream_info.error}")
         return response.register_value, response.mode_of_operation, response.stream_info
 
@@ -219,7 +229,7 @@ class StreamedActuator:
         response: OrcaStreamWriteResponsePDU = await self.__client.execute(
             False, OrcaStreamWriteRequestPDU(address, width, data, dev_id=self.__dev_id)  # type: ignore
         )
-        if not response.stream_info.error:
+        if response.stream_info.error:
             raise RuntimeError(f"Motor Error: {response.stream_info.error}")
         return response.stream_info
 
