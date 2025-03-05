@@ -6,7 +6,7 @@ authors = ["Yifei Liu <34564223+EzekielDaun@users.noreply.github.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = "^3.12"
 pymodbus = "^3.8.3"
 pyserial = "^3.5"
 
